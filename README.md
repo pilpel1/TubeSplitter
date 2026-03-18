@@ -23,7 +23,7 @@
 הרצה מומלצת:
 
 ```bash
-chmod +x setup.sh run_bot.sh
+chmod +x setup.sh run_bot.sh update_repo.sh
 ./setup.sh
 ```
 
@@ -32,6 +32,14 @@ chmod +x setup.sh run_bot.sh
 ```bash
 ./run_bot.sh
 ```
+
+לעדכון מהיר של הריפו על השרת, כשהבוט כבוי:
+
+```bash
+./update_repo.sh
+```
+
+הסקריפט מגבה קבצים ותיקיות שמוחרגים מ־git, מעדכן מה־GitHub, משחזר את הגיבוי, ומתקין מחדש תלויות רק אם `requirements.txt` השתנה בעדכון.
 
 אם אתה מעדיף ידנית:
 
