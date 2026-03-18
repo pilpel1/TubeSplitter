@@ -43,6 +43,8 @@ TELEGRAM_MESSAGE_LIMIT = 3800
 PLAYLIST_TITLE_MAX_LENGTH = 200
 VIDEO_TITLE_MAX_LENGTH = 300
 URL_PATTERN = re.compile(r"https?://[^\s<>()]+", re.IGNORECASE)
+OUTPUT_MODE_FULL = "full"
+OUTPUT_MODE_LINKS_ONLY = "only_links"
 SUPPORTED_YOUTUBE_HOSTS = {
     "youtube.com",
     "www.youtube.com",
@@ -57,44 +59,64 @@ TEXTS = {
         "start": (
             "שלח לי הודעה עם קישור לפלייליסט ביוטיוב, ואני אחזיר לך את כל הסרטונים "
             "כרשימה מסודרת.\n\n"
-            "אפשר לשלוח גם כמה פלייליסטים באותה הודעה."
+            "אפשר לשלוח גם כמה פלייליסטים באותה הודעה.\n"
+            "לבחירת מצב פלט: /mode"
         ),
         "help": (
             "מה נתמך:\n"
             "• קישור אחד או כמה קישורי פלייליסטים של YouTube\n"
             "• טקסט חופשי סביב הקישורים\n"
             "• פיצול אוטומטי אם התשובה ארוכה מדי\n"
-            "• החלפת שפה דרך /language"
+            "• החלפת שפה דרך /language\n"
+            "• בחירת מצב פלט דרך /mode\n"
+            "• קיצורי דרך: /only_links_mode ו־/full_mode"
         ),
         "language_prompt": "בחר שפה:",
         "language_updated": "השפה הוחלפה לעברית.",
+        "mode_prompt": "בחר מצב פלט:\nמצב נוכחי: {current_mode}",
+        "mode_updated": "מצב פלט עודכן.\nמצב נוכחי: {current_mode}",
+        "mode_label_full": "מלא",
+        "mode_label_links_only": "רק לינקים",
+        "output_mode_links_only": "מצב פלט הוחלף לקישורים בלבד.",
+        "output_mode_full": "מצב פלט הוחלף למצב מלא.",
         "invalid_playlist": "נא לשלוח קישור לפלייליסט ביוטיוב.",
         "processing_error": "לא הצלחתי לקרוא את הפלייליסט הזה כרגע.",
         "playlist_untitled": "פלייליסט ללא שם",
         "video_untitled": "סרטון ללא שם",
         "video_unavailable": "סרטון לא זמין",
+        "playlist_empty_links": "לא נמצאו קישורים זמינים בפלייליסט הזה.",
         "part_label": "חלק {current}/{total}",
         "language_button": "שפה",
     },
     "en": {
         "start": (
             "Send me a YouTube playlist link and I will return all videos as a clean list.\n\n"
-            "You can also send multiple playlists in one message."
+            "You can also send multiple playlists in one message.\n"
+            "To choose output mode: /mode"
         ),
         "help": (
             "Supported:\n"
             "• One or multiple YouTube playlist links\n"
             "• Extra text around the links\n"
             "• Automatic splitting when the reply is too long\n"
-            "• Language switching via /language"
+            "• Language switching via /language\n"
+            "• Output mode selection via /mode\n"
+            "• Shortcuts: /only_links_mode and /full_mode"
         ),
         "language_prompt": "Choose a language:",
         "language_updated": "Language switched to English.",
+        "mode_prompt": "Choose output mode:\nCurrent mode: {current_mode}",
+        "mode_updated": "Output mode updated.\nCurrent mode: {current_mode}",
+        "mode_label_full": "Full",
+        "mode_label_links_only": "Links only",
+        "output_mode_links_only": "Output mode switched to links only.",
+        "output_mode_full": "Output mode switched to full mode.",
         "invalid_playlist": "Please send a YouTube playlist link.",
         "processing_error": "I couldn't read this playlist right now.",
         "playlist_untitled": "Untitled playlist",
         "video_untitled": "Untitled video",
         "video_unavailable": "Video unavailable",
+        "playlist_empty_links": "No available links were found in this playlist.",
         "part_label": "Part {current}/{total}",
         "language_button": "Language",
     },
@@ -105,16 +127,19 @@ BOT_COMMANDS = {
         BotCommand("start", "Start the bot"),
         BotCommand("help", "Help and examples"),
         BotCommand("language", "Change bot language"),
+        BotCommand("mode", "Choose output mode"),
     ],
     "en": [
         BotCommand("start", "Start the bot"),
         BotCommand("help", "Help and examples"),
         BotCommand("language", "Change bot language"),
+        BotCommand("mode", "Choose output mode"),
     ],
     "he": [
         BotCommand("start", "התחלת הבוט"),
         BotCommand("help", "עזרה ודוגמאות"),
         BotCommand("language", "החלפת שפה"),
+        BotCommand("mode", "בחירת מצב פלט"),
     ],
 }
 
@@ -141,6 +166,21 @@ def get_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     return language
 
 
+def get_output_mode(context: ContextTypes.DEFAULT_TYPE) -> str:
+    output_mode = context.user_data.get("output_mode")
+    if output_mode in {OUTPUT_MODE_FULL, OUTPUT_MODE_LINKS_ONLY}:
+        return output_mode
+
+    context.user_data["output_mode"] = OUTPUT_MODE_FULL
+    return OUTPUT_MODE_FULL
+
+
+def get_output_mode_label(language: str, output_mode: str) -> str:
+    if output_mode == OUTPUT_MODE_LINKS_ONLY:
+        return t(language, "mode_label_links_only")
+    return t(language, "mode_label_full")
+
+
 def t(language: str, key: str, **kwargs: Any) -> str:
     template = TEXTS[language][key]
     return template.format(**kwargs)
@@ -160,6 +200,26 @@ def build_language_keyboard(current_language: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(
                 "English",
                 callback_data="lang:en",
+            ),
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def build_mode_keyboard(current_mode: str, language: str) -> InlineKeyboardMarkup:
+    full_label = t(language, "mode_label_full")
+    links_only_label = t(language, "mode_label_links_only")
+    if current_mode == OUTPUT_MODE_FULL:
+        full_label = f"[{full_label}]"
+    else:
+        links_only_label = f"[{links_only_label}]"
+
+    buttons = [
+        [
+            InlineKeyboardButton(full_label, callback_data=f"mode:{OUTPUT_MODE_FULL}"),
+            InlineKeyboardButton(
+                links_only_label,
+                callback_data=f"mode:{OUTPUT_MODE_LINKS_ONLY}",
             ),
         ]
     ]
@@ -303,6 +363,36 @@ def format_entry_block(language: str, entry: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def split_links_only_messages(
+    language: str,
+    entries: list[dict[str, Any]],
+    max_length: int = TELEGRAM_MESSAGE_LIMIT,
+) -> list[str]:
+    links = [entry["url"] for entry in entries if entry.get("url")]
+    if not links:
+        return [t(language, "playlist_empty_links")]
+
+    messages: list[str] = []
+    current_message_parts: list[str] = []
+    current_length = 0
+
+    for link in links:
+        addition = len(link) if not current_message_parts else len(link) + 2
+        if current_message_parts and current_length + addition > max_length:
+            messages.append("\n\n".join(current_message_parts))
+            current_message_parts = [link]
+            current_length = len(link)
+            continue
+
+        current_message_parts.append(link)
+        current_length += addition
+
+    if current_message_parts:
+        messages.append("\n\n".join(current_message_parts))
+
+    return messages
+
+
 def split_playlist_messages(
     language: str,
     playlist_title: str,
@@ -386,6 +476,33 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
 
 
+async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    language = get_language(update, context)
+    output_mode = get_output_mode(context)
+    await update.message.reply_text(
+        t(
+            language,
+            "mode_prompt",
+            current_mode=get_output_mode_label(language, output_mode),
+        ),
+        reply_markup=build_mode_keyboard(output_mode, language),
+    )
+
+
+async def only_links_mode_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    language = get_language(update, context)
+    context.user_data["output_mode"] = OUTPUT_MODE_LINKS_ONLY
+    await update.message.reply_text(t(language, "output_mode_links_only"))
+
+
+async def full_mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    language = get_language(update, context)
+    context.user_data["output_mode"] = OUTPUT_MODE_FULL
+    await update.message.reply_text(t(language, "output_mode_full"))
+
+
 async def language_button_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -409,6 +526,32 @@ async def language_button_handler(
             raise
 
 
+async def mode_button_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    selected_mode = query.data.split(":", maxsplit=1)[1]
+    if selected_mode not in {OUTPUT_MODE_FULL, OUTPUT_MODE_LINKS_ONLY}:
+        return
+
+    context.user_data["output_mode"] = selected_mode
+    language = get_language(update, context)
+    try:
+        await query.edit_message_text(
+            t(
+                language,
+                "mode_updated",
+                current_mode=get_output_mode_label(language, selected_mode),
+            ),
+            reply_markup=build_mode_keyboard(selected_mode, language),
+        )
+    except BadRequest as error:
+        if "Message is not modified" not in str(error):
+            raise
+
+
 async def process_playlist_url(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -427,17 +570,24 @@ async def process_playlist_url(
         await update.message.reply_text(t(language, "processing_error"))
         return
 
-    entry_blocks = [
-        format_entry_block(language, entry) for entry in playlist_data["entries"]
-    ]
-    messages = split_playlist_messages(
-        language=language,
-        playlist_title=playlist_data["title"],
-        entry_blocks=entry_blocks,
-    )
+    output_mode = get_output_mode(context)
+    if output_mode == OUTPUT_MODE_LINKS_ONLY:
+        messages = split_links_only_messages(language, playlist_data["entries"])
+    else:
+        entry_blocks = [
+            format_entry_block(language, entry) for entry in playlist_data["entries"]
+        ]
+        messages = split_playlist_messages(
+            language=language,
+            playlist_title=playlist_data["title"],
+            entry_blocks=entry_blocks,
+        )
 
     for message in messages:
-        await update.message.reply_text(message, parse_mode=ParseMode.HTML)
+        if output_mode == OUTPUT_MODE_LINKS_ONLY:
+            await update.message.reply_text(message)
+        else:
+            await update.message.reply_text(message, parse_mode=ParseMode.HTML)
 
 
 async def text_message_handler(
@@ -494,7 +644,11 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("language", language_command))
+    application.add_handler(CommandHandler("mode", mode_command))
+    application.add_handler(CommandHandler("only_links_mode", only_links_mode_command))
+    application.add_handler(CommandHandler("full_mode", full_mode_command))
     application.add_handler(CallbackQueryHandler(language_button_handler, pattern=r"^lang:"))
+    application.add_handler(CallbackQueryHandler(mode_button_handler, pattern=r"^mode:"))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler)
     )
