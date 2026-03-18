@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 import html
 import logging
 import os
@@ -8,8 +9,15 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import yt_dlp
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    BotCommand,
+    BotCommandScopeChat,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Update,
+)
 from telegram.constants import ChatAction, ParseMode
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -23,9 +31,13 @@ from telegram.ext import (
 
 logging.basicConfig(
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    level=logging.INFO,
+    level=logging.WARNING,
 )
 LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
+logging.getLogger("telegram").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 TELEGRAM_MESSAGE_LIMIT = 3800
 PLAYLIST_TITLE_MAX_LENGTH = 200
@@ -88,6 +100,24 @@ TEXTS = {
     },
 }
 
+BOT_COMMANDS = {
+    "default": [
+        BotCommand("start", "Start the bot"),
+        BotCommand("help", "Help and examples"),
+        BotCommand("language", "Change bot language"),
+    ],
+    "en": [
+        BotCommand("start", "Start the bot"),
+        BotCommand("help", "Help and examples"),
+        BotCommand("language", "Change bot language"),
+    ],
+    "he": [
+        BotCommand("start", "התחלת הבוט"),
+        BotCommand("help", "עזרה ודוגמאות"),
+        BotCommand("language", "החלפת שפה"),
+    ],
+}
+
 
 def clamp_text(value: str | None, fallback: str, max_length: int) -> str:
     text = (value or "").strip() or fallback
@@ -116,15 +146,19 @@ def t(language: str, key: str, **kwargs: Any) -> str:
     return template.format(**kwargs)
 
 
+def get_commands_for_language(language: str) -> list[BotCommand]:
+    return BOT_COMMANDS.get(language, BOT_COMMANDS["default"])
+
+
 def build_language_keyboard(current_language: str) -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton(
-                ("✓ " if current_language == "he" else "") + "עברית",
+                "עברית",
                 callback_data="lang:he",
             ),
             InlineKeyboardButton(
-                ("✓ " if current_language == "en" else "") + "English",
+                "English",
                 callback_data="lang:en",
             ),
         ]
@@ -328,6 +362,11 @@ def split_playlist_messages(
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     language = get_language(update, context)
+    if update.effective_chat:
+        await context.bot.set_my_commands(
+            get_commands_for_language(language),
+            scope=BotCommandScopeChat(update.effective_chat.id),
+        )
     await update.message.reply_text(
         t(language, "start"),
         reply_markup=build_language_keyboard(language),
@@ -358,10 +397,16 @@ async def language_button_handler(
         return
 
     context.user_data["lang"] = selected_language
-    await query.edit_message_text(
-        t(selected_language, "language_updated"),
-        reply_markup=build_language_keyboard(selected_language),
-    )
+    if update.effective_chat:
+        await context.bot.set_my_commands(
+            get_commands_for_language(selected_language),
+            scope=BotCommandScopeChat(update.effective_chat.id),
+        )
+    try:
+        await query.edit_message_text(t(selected_language, "language_updated"))
+    except BadRequest as error:
+        if "Message is not modified" not in str(error):
+            raise
 
 
 async def process_playlist_url(
@@ -423,6 +468,12 @@ async def error_handler(
     LOGGER.exception("Unhandled exception while processing update", exc_info=context.error)
 
 
+async def post_init(application: Application) -> None:
+    await application.bot.set_my_commands(BOT_COMMANDS["default"])
+    await application.bot.set_my_commands(BOT_COMMANDS["en"], language_code="en")
+    await application.bot.set_my_commands(BOT_COMMANDS["he"], language_code="he")
+
+
 def build_application() -> Application:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
@@ -436,6 +487,7 @@ def build_application() -> Application:
         Application.builder()
         .token(token)
         .persistence(persistence)
+        .post_init(post_init)
         .build()
     )
 
@@ -453,7 +505,8 @@ def build_application() -> Application:
 
 def main() -> None:
     application = build_application()
-    LOGGER.info("Bot is running")
+    startup_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    LOGGER.info("Bot is running and ready at %s", startup_time)
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
