@@ -73,8 +73,8 @@ TEXTS = {
         ),
         "language_prompt": "בחר שפה:",
         "language_updated": "השפה הוחלפה לעברית.",
-        "mode_prompt": "בחר מצב פלט:\nמצב נוכחי: {current_mode}",
-        "mode_updated": "מצב פלט עודכן.\nמצב נוכחי: {current_mode}",
+        "mode_prompt": "בחר מצב פלט. מצב נוכחי: {current_mode}",
+        "mode_updated": "מצב פלט עודכן. מצב נוכחי: {current_mode}",
         "mode_label_full": "מלא",
         "mode_label_links_only": "רק לינקים",
         "output_mode_links_only": "מצב פלט הוחלף לקישורים בלבד.",
@@ -105,8 +105,8 @@ TEXTS = {
         ),
         "language_prompt": "Choose a language:",
         "language_updated": "Language switched to English.",
-        "mode_prompt": "Choose output mode:\nCurrent mode: {current_mode}",
-        "mode_updated": "Output mode updated.\nCurrent mode: {current_mode}",
+        "mode_prompt": "Choose output mode. Current mode: {current_mode}",
+        "mode_updated": "Output mode updated. Current mode: {current_mode}",
         "mode_label_full": "Full",
         "mode_label_links_only": "Links only",
         "output_mode_links_only": "Output mode switched to links only.",
@@ -544,8 +544,7 @@ async def mode_button_handler(
                 language,
                 "mode_updated",
                 current_mode=get_output_mode_label(language, selected_mode),
-            ),
-            reply_markup=build_mode_keyboard(selected_mode, language),
+            )
         )
     except BadRequest as error:
         if "Message is not modified" not in str(error):
